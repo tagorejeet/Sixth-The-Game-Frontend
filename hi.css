@@ -1,0 +1,23 @@
+
+/* Add this CSS for your new center-div wrapper */
+.center-div {
+    display: flex;
+    justify-content: center;  /* Centers horizontally */
+    align-items: center;      /* Centers vertically */
+    min-height: calc(100vh - 65px);  /* Full height minus header */
+    padding: 2rem;            /* Add some breathing room */
+}
+
+/* Simplify your dashboard styles - remove centering properties */
+.dashboard {
+    display: flex;
+    flex-direction: column;
+    align-items: center;      /* Center content within dashboard */
+    text-align: center;
+    padding: 2rem;
+    background-color: rgba(31, 41, 55, 0.5); /* Optional: subtle background */
+    border-radius: 12px;      /* Optional: rounded corners */
+    max-width: 600px;         /* Optional: max width for better proportions */
+    width: 100%;
+}
+            
