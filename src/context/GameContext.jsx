@@ -12,11 +12,11 @@ export const GameProvider = ({ children }) => {
   const [currentRow, setCurrentRow] = useState(0);
   const [isGameOver, setIsGameOver] = useState(false);
   const [gameMessage, setGameMessage] = useState('');
-  const [stats, setStats] = useState({ gamesPlayed: 0, gamesWon: 0 });
-  const [lastPlayedDate, setLastPlayedDate] = useState(localStorage.getItem('lastPlayedDate'));
+  const [stats, setStats] = useState({ gamesPlayed: 0, gamesWon: 0, lastPlayed: null });
   const [keyStatuses, setKeyStatuses] = useState({});
   const { token } = useAuth();
 
+  // Get today’s IST date
   const getISTDate = () => {
     const now = new Date();
     const offset = 5.5 * 60 * 60 * 1000;
@@ -24,6 +24,7 @@ export const GameProvider = ({ children }) => {
     return istDate.toISOString().split('T')[0];
   };
 
+  // Fetch daily word
   const fetchDailyWord = useCallback(async () => {
     if (!token) return;
     try {
@@ -37,6 +38,7 @@ export const GameProvider = ({ children }) => {
     }
   }, [token]);
 
+  // Fetch stats (with lastPlayed from DB)
   const fetchStats = useCallback(async () => {
     if (!token) return;
     try {
@@ -49,12 +51,26 @@ export const GameProvider = ({ children }) => {
     }
   }, [token]);
 
+  // Reset game state whenever user logs in
   useEffect(() => {
+    if (!token) return;
+
+    fetchDailyWord();
+    fetchStats();
+  }, [token, fetchDailyWord, fetchStats]);
+
+  // Watch for stats update to apply daily lock
+  useEffect(() => {
+    if (!stats.lastPlayed) return;
+
     const today = getISTDate();
+    const lastPlayedDate = new Date(stats.lastPlayed).toISOString().split('T')[0];
+
     if (lastPlayedDate === today) {
       setIsGameOver(true);
       setGameMessage("You've already played today. Come back tomorrow!");
     } else {
+      // Reset state for a fresh game
       setGuesses(Array(6).fill(null));
       setCurrentRow(0);
       setIsGameOver(false);
@@ -62,55 +78,49 @@ export const GameProvider = ({ children }) => {
       setKeyStatuses({});
       setCurrentGuess('');
     }
-    fetchDailyWord();
-    fetchStats();
-  }, [token, fetchDailyWord, fetchStats, lastPlayedDate]);
+  }, [stats]);
 
+  // Handle win
   const handleWin = async () => {
     setIsGameOver(true);
     setGameMessage(`You won! ✨`);
-    localStorage.setItem('lastPlayedDate', getISTDate());
-    setLastPlayedDate(getISTDate());
     try {
-        await axios.post(`${API_BASE_URL}/stats/win`, {}, { headers: { Authorization: `Bearer ${token}` } });
-        fetchStats();
+      await axios.post(`${API_BASE_URL}/stats/win`, {}, { headers: { Authorization: `Bearer ${token}` } });
+      fetchStats();
     } catch (error) { console.error("Failed to update win stats", error); }
   };
 
+  // Handle loss
   const handleLoss = async () => {
     setIsGameOver(true);
     setGameMessage(`So close! The word was ${dailyWord}.`);
-    localStorage.setItem('lastPlayedDate', getISTDate());
-    setLastPlayedDate(getISTDate());
     try {
-        await axios.post(`${API_BASE_URL}/stats/loss`, {}, { headers: { Authorization: `Bearer ${token}` } });
-        fetchStats();
+      await axios.post(`${API_BASE_URL}/stats/loss`, {}, { headers: { Authorization: `Bearer ${token}` } });
+      fetchStats();
     } catch (error) { console.error("Failed to update loss stats", error); }
   };
 
+  // Submit guess
   const submitGuess = async () => {
     if (isGameOver || currentGuess.length !== 6) return;
 
-    // --- New Validation Step ---
     try {
-        const { data } = await axios.post(`${API_BASE_URL}/game/validate`, 
-            { word: currentGuess },
-            { headers: { Authorization: `Bearer ${token}` } }
-        );
+      const { data } = await axios.post(`${API_BASE_URL}/game/validate`, 
+        { word: currentGuess },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
 
-        if (!data.isValid) {
-            setGameMessage("Not in word list");
-            // Clear the message after a couple of seconds
-            setTimeout(() => setGameMessage(''), 2000);
-            return; // Stop the submission
-        }
-    } catch (error) {
-        console.error("Error validating word", error);
-        setGameMessage("Could not validate word");
+      if (!data.isValid) {
+        setGameMessage("Not in word list");
         setTimeout(() => setGameMessage(''), 2000);
         return;
+      }
+    } catch (error) {
+      console.error("Error validating word", error);
+      setGameMessage("Could not validate word");
+      setTimeout(() => setGameMessage(''), 2000);
+      return;
     }
-    // --- End of Validation Step ---
 
     const newGuesses = [...guesses];
     newGuesses[currentRow] = currentGuess;
@@ -119,9 +129,9 @@ export const GameProvider = ({ children }) => {
     const newKeyStatuses = { ...keyStatuses };
     const wordLetters = dailyWord.split('');
     currentGuess.split('').forEach((letter, index) => {
-        if (wordLetters[index] === letter) newKeyStatuses[letter] = 'correct';
-        else if (wordLetters.includes(letter) && newKeyStatuses[letter] !== 'correct') newKeyStatuses[letter] = 'present';
-        else if (!wordLetters.includes(letter)) newKeyStatuses[letter] = 'absent';
+      if (wordLetters[index] === letter) newKeyStatuses[letter] = 'correct';
+      else if (wordLetters.includes(letter) && newKeyStatuses[letter] !== 'correct') newKeyStatuses[letter] = 'present';
+      else if (!wordLetters.includes(letter)) newKeyStatuses[letter] = 'absent';
     });
     setKeyStatuses(newKeyStatuses);
     
@@ -133,6 +143,7 @@ export const GameProvider = ({ children }) => {
     }
   };
 
+  // Handle key presses
   const handleKeyPress = (key) => {
     if (isGameOver) return;
     if (key === 'ENTER') {
